@@ -18,7 +18,7 @@ const io = new Server(server, {
   cors: {
     origin: [
       "http://localhost:5173",
-      "https://mern-chat-app-frontend.onrender.com",
+      "https://mern-chat-app-frontend-zk7s.onrender.com",
     ],
     methods: ["GET", "POST"],
   },
