@@ -1,12 +1,20 @@
 // backend/server.js
-const express = require('express');
-const cors = require('cors');
-const http = require('http');
-const { Server } = require('socket.io');
-require('dotenv').config();
+const express = require("express");
+const cors = require("cors");
+const http = require("http");
+const { Server } = require("socket.io");
+require("dotenv").config();
 
 const app = express();
-app.use(cors());
+const corsOptions = {
+  origin: [
+    "http://localhost:5173", // 開発用
+    "https://mern-chat-app-frontend-zk7s.onrender.com", // 本番用
+  ],
+  credentials: true,
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -15,8 +23,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*", // 開発中はワイルドカードでOK、後でフロントURLに変更
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+  },
 });
 
 // 接続確認

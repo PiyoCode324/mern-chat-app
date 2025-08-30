@@ -4,7 +4,8 @@ import { io } from "socket.io-client";
 
 export default function SocketTest() {
   useEffect(() => {
-    const socket = io("http://localhost:5000"); // バックエンドURL
+    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
+    const socket = io(SOCKET_URL);
     socket.on("connect", () => {
       console.log("Connected to Socket.IO server:", socket.id);
     });
