@@ -1,16 +1,25 @@
-// backend/server.js
+// // backend/server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const mongoose = require("mongoose");
+require("dotenv").config({ path: ".env.development" });
+
+const socketHandler = require("./socket");
+const User = require("./models/User");
+const Group = require("./models/Group");
+const Message = require("./models/Message");
 
 const app = express();
-
-// ミドルウェア
 app.use(cors());
 app.use(express.json());
 
-// HTTP サーバー作成
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error(err));
+
 const server = http.createServer(app);
 
 // Socket.IO セットアップ
@@ -24,29 +33,18 @@ const io = new Server(server, {
   },
 });
 
-io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
+// Socket.IO処理を別ファイルに分離
+socketHandler(io);
 
-  // ユーザーが接続したら自分のルームに join
-  socket.on("join", (userId) => {
-    socket.userId = userId;
-    socket.join(userId);
-    console.log(`User ${userId} joined room`);
-  });
+const groupRoutes = require("./routes/groups");
+app.use("/api/groups", groupRoutes);
 
-  // メッセージ送信イベント
-  socket.on("sendMessage", (msg) => {
-    // 相手に送信（senderは除く）
-    // broadcast.to(msg.to)を使うと、送信者以外のルームメンバーにのみ送信される
-    // これにより、自分のメッセージは自分には返ってこない
-    socket.to(msg.to).emit("receiveMessage", msg);
-  });
+// この行を修正
+const messageRoutes = require("./routes/message");
+app.use("/api/messages", messageRoutes);
 
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-  });
-});
+const userRoutes = require("./routes/user");
+app.use("/api/users", userRoutes);
 
-// サーバー起動
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
