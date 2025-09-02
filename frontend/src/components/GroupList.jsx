@@ -12,19 +12,23 @@ export default function GroupList({ groups, onDelete, currentUserId }) {
     if (!window.confirm("本当に削除しますか？")) return;
 
     try {
-      await axios.delete(`${API_URL}/api/groups/${id}`, {
+      await axios.delete(`${API_URL}/groups/${id}`, {
         data: { userId: currentUserId },
       });
       onDelete(id);
     } catch (err) {
       console.error(err);
+      alert("削除に失敗しました");
     }
   };
 
   return (
     <ul className="p-4 space-y-2">
       {groups.map((g) => (
-        <li key={g._id} className="flex justify-between items-center bg-gray-100 p-2 rounded">
+        <li
+          key={g._id}
+          className="flex justify-between items-center bg-gray-100 p-2 rounded"
+        >
           <span>{g.name}</span>
           {g.createdBy === currentUserId && (
             <button
