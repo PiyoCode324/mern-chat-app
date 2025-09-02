@@ -1,12 +1,11 @@
-// // backend/server.js
+// backend/server.js
 const express = require("express");
 const http = require("http");
-const { Server } = require("socket.io");
 const cors = require("cors");
 const mongoose = require("mongoose");
 require("dotenv").config({ path: ".env.development" });
 
-const socketHandler = require("./socket");
+const socket = require("./socket/index"); // socket/index.jsをインポート
 const User = require("./models/User");
 const Group = require("./models/Group");
 const Message = require("./models/Message");
@@ -22,24 +21,12 @@ mongoose
 
 const server = http.createServer(app);
 
-// Socket.IO セットアップ
-const io = new Server(server, {
-  cors: {
-    origin: [
-      "http://localhost:5173",
-      "https://mern-chat-app-frontend-zk7s.onrender.com",
-    ],
-    methods: ["GET", "POST"],
-  },
-});
-
-// Socket.IO処理を別ファイルに分離
-socketHandler(io);
+// Socket.IOのインスタンスを初期化し、外部からアクセス可能にする
+socket.init(server);
 
 const groupRoutes = require("./routes/groups");
 app.use("/api/groups", groupRoutes);
 
-// この行を修正
 const messageRoutes = require("./routes/message");
 app.use("/api/messages", messageRoutes);
 
