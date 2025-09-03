@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
 import { io } from "socket.io-client";
+import { searchGifs } from "../api/giphy";
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 const API_URL = import.meta.env.VITE_API_URL;
@@ -14,6 +15,8 @@ export default function GroupChat({ groupId }) {
   const [file, setFile] = useState(null);
   const [socket, setSocket] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [gifQuery, setGifQuery] = useState("");
+  const [gifResults, setGifResults] = useState([]);
 
   // メッセージ取得
   const fetchMessages = async () => {
@@ -51,14 +54,12 @@ export default function GroupChat({ groupId }) {
     if (!user) return;
     const newSocket = io(SOCKET_URL, { query: { userId: user.uid } });
     setSocket(newSocket);
-
     return () => newSocket.disconnect();
   }, [user]);
 
   // Socket.io イベント
   useEffect(() => {
     if (!socket || !user || !groupId) return;
-
     socket.emit("joinGroup", { groupId, userId: user.uid });
 
     socket.on("receiveGroupMessage", (msg) => {
@@ -95,13 +96,38 @@ export default function GroupChat({ groupId }) {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      const sentMessage = res.data;
-      socket.emit("groupMessage", sentMessage);
+      socket.emit("groupMessage", res.data);
 
       setNewMessage("");
       setFile(null);
     } catch (err) {
       console.error("メッセージ送信に失敗:", err);
+    }
+  };
+
+  // GIF検索
+  const handleSearchGif = async () => {
+    if (!gifQuery.trim()) return;
+    const results = await searchGifs(gifQuery);
+    setGifResults(results);
+  };
+
+  // GIF送信
+  const handleSendGif = async (url) => {
+    if (!socket || !user) return;
+    try {
+      const res = await axios.post(`${API_URL}/messages/gif`, {
+        group: groupId,
+        sender: user.uid,
+        fileUrl: url,
+        // textの代わりにgifQueryを送信
+        gifQuery: gifQuery,
+      });
+      socket.emit("groupMessage", res.data);
+      // GIF送信後は検索結果をクリア
+      setGifResults([]);
+    } catch (err) {
+      console.error("GIF送信に失敗:", err);
     }
   };
 
@@ -186,7 +212,6 @@ export default function GroupChat({ groupId }) {
           </button>
         </div>
 
-        {/* 選択されたファイルを表示 */}
         {file && (
           <div className="text-sm text-gray-700">
             選択中のファイル: {file.name} ({(file.size / 1024).toFixed(1)} KB)
@@ -199,6 +224,36 @@ export default function GroupChat({ groupId }) {
             )}
           </div>
         )}
+
+        {/* GIF検索 */}
+        <div className="my-2">
+          <input
+            type="text"
+            value={gifQuery}
+            onChange={(e) => setGifQuery(e.target.value)}
+            placeholder="Search GIFs..."
+            className="p-2 border rounded-md w-2/3"
+          />
+          <button
+            type="button"
+            onClick={handleSearchGif}
+            className="px-3 py-2 bg-blue-500 text-white rounded-md ml-2"
+          >
+            Search
+          </button>
+
+          <div className="flex flex-wrap gap-2 mt-2">
+            {gifResults.map((url, index) => (
+              <img
+                key={index}
+                src={url}
+                alt="GIF"
+                className="w-24 h-24 object-cover cursor-pointer"
+                onClick={() => handleSendGif(url)}
+              />
+            ))}
+          </div>
+        </div>
       </form>
     </div>
   );
