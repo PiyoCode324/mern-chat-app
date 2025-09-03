@@ -12,14 +12,16 @@ const router = express.Router();
 // ローカルと本番環境でサービスアカウントキーを動的に読み込む
 let serviceAccount;
 try {
-  // ローカル環境の場合、ファイルを直接読み込む
+  // ローカル環境
   serviceAccount = require("../serviceAccountKey.json");
 } catch (e) {
-  // 本番環境（Renderなど）の場合、環境変数からJSON文字列をパース
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  // 本番環境（Render）
+  // 新しい環境変数名を確認し、存在すればBase64をデコードする
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+    const base64String = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+    const jsonString = Buffer.from(base64String, "base64").toString("utf-8");
+    serviceAccount = JSON.parse(jsonString);
   } else {
-    // 環境変数もファイルも存在しない場合はエラーをスロー
     throw new Error("Firebase service account credentials not found.");
   }
 }
