@@ -1,32 +1,72 @@
 // backend/routes/message.js
 const express = require("express");
-const router = express.Router();
-const Message = require("../models/Message");
+const multer = require("multer");
+const { initializeApp, cert } = require("firebase-admin/app");
+const { getStorage } = require("firebase-admin/storage");
+const Message = require("../models/Message.js");
 const mongoose = require("mongoose");
-// io オブジェクトをミドルウェア経由で利用できるようにする
-const { getIo } = require("../socket");
+const { getIo } = require("../socket/index.js");
+
+const router = express.Router();
+
+// Firebase Admin SDKのサービスアカウントキーをインポート
+// 実際のファイルパスに置き換える必要があります
+const serviceAccount = require("../serviceAccountKey.json");
+
+// Firebase Admin SDKの初期化
+initializeApp({
+  credential: cert(serviceAccount),
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+});
+
+const bucket = getStorage().bucket();
+
+// multerの設定をmemoryStorageに変更
+// ファイルをメモリに一時的に保持する
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MBに制限
+  },
+});
 
 // POST /api/messages
-// 新しいメッセージを作成
-router.post("/", async (req, res) => {
+// 新しいメッセージを作成 (テキストまたはファイル)
+router.post("/", upload.single("file"), async (req, res) => {
   try {
     const { group, sender, text } = req.body;
+    let fileUrl = null;
 
-    if (!group || !sender || !text) {
-      return res
-        .status(400)
-        .json({ message: "グループ、送信者、テキストは必須です" });
+    if (req.file) {
+      const fileName = `${Date.now()}-${req.file.originalname}`;
+      const file = bucket.file(fileName);
+
+      await file.save(req.file.buffer, {
+        metadata: {
+          contentType: req.file.mimetype,
+        },
+      });
+
+      fileUrl = `https://firebasestorage.googleapis.com/v0/b/${
+        bucket.name
+      }/o/${encodeURIComponent(fileName)}?alt=media`;
     }
 
-    // groupが有効なObjectIdであるかをここで検証
+    if (!group || !sender || (!text && !fileUrl)) {
+      return res.status(400).json({
+        message: "グループ、送信者、およびテキストまたはファイルは必須です",
+      });
+    }
+
     if (!mongoose.Types.ObjectId.isValid(group)) {
       return res.status(400).json({ message: "無効なグループIDです" });
     }
 
     const message = new Message({
-      group, // stringとして検証済みなのでそのまま使用
+      group,
       sender,
       text,
+      fileUrl,
     });
 
     await message.save();
@@ -38,6 +78,7 @@ router.post("/", async (req, res) => {
 });
 
 // GET /api/messages/group/:groupId
+// グループのメッセージを取得
 router.get("/group/:groupId", async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.groupId)) {
@@ -64,23 +105,20 @@ router.post("/:id/read", async (req, res) => {
     const message = await Message.findById(req.params.id);
 
     if (!message) {
-      return res.status(404).json({ error: "Message not found" });
+      return res.status(404).json({ error: "メッセージが見つかりません" });
     }
 
-    // 既読リストにuserIdが含まれていない場合のみ追加
     if (!message.readBy.includes(userId)) {
       message.readBy.push(userId);
       await message.save();
 
-      // 同じグループの全クライアントに既読更新を通知
-      // 既読更新されたメッセージと、そのグループIDを送信
       io.to(message.group.toString()).emit("readStatusUpdated", message);
     }
 
     res.json({ success: true, message });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update read status" });
+    res.status(500).json({ error: "既読ステータスの更新に失敗しました" });
   }
 });
 

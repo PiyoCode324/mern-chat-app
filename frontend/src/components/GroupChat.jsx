@@ -1,158 +1,205 @@
 // frontend/src/components/GroupChat.jsx
-import { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
-import io from "socket.io-client";
+import { io } from "socket.io-client";
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 const API_URL = import.meta.env.VITE_API_URL;
 
-function GroupChat({ groupId }) {
+export default function GroupChat({ groupId }) {
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const { user } = useAuth();
+  const [file, setFile] = useState(null);
   const [socket, setSocket] = useState(null);
+  const [loading, setLoading] = useState(true);
 
+  // メッセージ取得
   const fetchMessages = async () => {
     try {
       const res = await axios.get(`${API_URL}/messages/group/${groupId}`);
       setMessages(res.data);
     } catch (err) {
-      console.error("Failed to fetch group messages:", err);
+      console.error("メッセージ取得に失敗:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleMarkAsRead = async (messageId, currentUserId) => {
+  // 既読処理
+  const handleMarkAsRead = async (messageId) => {
+    if (!user) return;
     try {
       await axios.post(`${API_URL}/messages/${messageId}/read`, {
-        userId: currentUserId,
+        userId: user.uid,
       });
-      // メッセージの状態を楽観的に更新
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
+      setMessages((prev) =>
+        prev.map((msg) =>
           msg._id === messageId
-            ? { ...msg, readBy: [...(msg.readBy || []), currentUserId] }
+            ? { ...msg, readBy: [...(msg.readBy || []), user.uid] }
             : msg
         )
       );
     } catch (err) {
-      console.error("Failed to update read status:", err);
+      console.error("既読更新に失敗:", err);
     }
   };
 
+  // Socket.io 初期化
   useEffect(() => {
     if (!user) return;
-
-    const newSocket = io(SOCKET_URL, {
-      query: { userId: user.uid },
-    });
+    const newSocket = io(SOCKET_URL, { query: { userId: user.uid } });
     setSocket(newSocket);
 
-    return () => {
-      newSocket.disconnect();
-    };
+    return () => newSocket.disconnect();
   }, [user]);
 
+  // Socket.io イベント
   useEffect(() => {
-    if (!socket || !groupId) return;
+    if (!socket || !user || !groupId) return;
 
-    socket.on("receiveGroupMessage", (message) => {
-      setMessages((prevMessages) => [...prevMessages, message]);
+    socket.emit("joinGroup", { groupId, userId: user.uid });
+
+    socket.on("receiveGroupMessage", (msg) => {
+      setMessages((prev) => [...prev, msg]);
     });
 
-    socket.on("readStatusUpdated", (updatedMessage) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg._id === updatedMessage._id ? updatedMessage : msg
-        )
+    socket.on("readStatusUpdated", (updatedMsg) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === updatedMsg._id ? updatedMsg : msg))
       );
     });
 
-    socket.emit("joinGroup", { groupId, userId: user.uid });
     fetchMessages();
 
     return () => {
       socket.off("receiveGroupMessage");
       socket.off("readStatusUpdated");
     };
-  }, [socket, groupId, user]);
+  }, [socket, user, groupId]);
 
-  const handleSendMessage = (e) => {
+  // メッセージ送信
+  const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !user || !socket) return;
+    if (!newMessage.trim() && !file) return;
 
-    socket.emit("groupMessage", {
-      groupId,
-      sender: user.uid,
-      text: newMessage,
-    });
+    try {
+      const formData = new FormData();
+      formData.append("group", groupId);
+      formData.append("sender", user.uid);
+      if (file) formData.append("file", file);
+      if (newMessage.trim() !== "") formData.append("text", newMessage);
 
-    setNewMessage("");
+      const res = await axios.post(`${API_URL}/messages`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      const sentMessage = res.data;
+      socket.emit("groupMessage", sentMessage);
+
+      setNewMessage("");
+      setFile(null);
+    } catch (err) {
+      console.error("メッセージ送信に失敗:", err);
+    }
   };
 
+  // 受信メッセージの既読更新
   useEffect(() => {
     if (!user) return;
     messages.forEach((msg) => {
-      // 💡 修正: メッセージの送信者が自分自身ではないことを確認
       if (msg.sender !== user.uid && !msg.readBy?.includes(user.uid)) {
-        handleMarkAsRead(msg._id, user.uid);
+        handleMarkAsRead(msg._id);
       }
     });
   }, [messages, user]);
 
-  if (!user) {
-    return <div>ユーザーを認証しています...</div>;
-  }
+  if (!user) return <div>ユーザーを認証しています...</div>;
+  if (loading)
+    return <div className="text-center p-4">メッセージを取得中...</div>;
 
   return (
-    <div className="flex flex-col h-full bg-gray-100 p-4 rounded-lg shadow-md">
+    <div className="flex flex-col h-screen p-4 bg-gray-100 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4 text-center">グループチャット</h2>
+
       <div className="flex-1 overflow-y-auto mb-4 p-2 bg-white rounded-md">
-        <h2 className="text-xl font-bold mb-4">Chat with Group: {groupId}</h2>
-        <div className="space-y-2">
-          {messages.map((msg) => (
+        {messages.length > 0 ? (
+          messages.map((msg) => (
             <div
               key={msg._id}
-              className={`p-2 rounded-lg ${
+              className={`p-2 rounded-lg max-w-xs mb-2 ${
                 msg.sender === user.uid
-                  ? "bg-blue-200 text-right self-end"
-                  : "bg-gray-200 text-left self-start"
+                  ? "bg-blue-200 ml-auto"
+                  : "bg-gray-200 mr-auto"
               }`}
             >
-              <p className="text-sm">
-                <strong>{msg.sender}:</strong> {msg.text}
-              </p>
-              <p className="text-xs text-gray-500">
+              <p className="font-bold">{msg.sender.slice(0, 8)}...</p>
+              {msg.text && <p>{msg.text}</p>}
+              {msg.fileUrl && (
+                <img
+                  src={msg.fileUrl}
+                  alt="添付ファイル"
+                  className="mt-2 rounded-lg max-w-full"
+                />
+              )}
+              <div className="text-xs text-right text-gray-500 mt-1">
                 {msg.createdAt
                   ? new Date(msg.createdAt).toLocaleTimeString()
                   : ""}
-              </p>
+              </div>
               {msg.sender === user.uid && (
-                // 💡 修正: 送信者自身を除いた既読数
                 <p className="text-xs text-gray-500">
-                  {`既読: ${msg.readBy?.length - 1}人`}
+                  {`既読: ${
+                    msg.readBy?.filter((id) => id !== user.uid).length || 0
+                  }人`}
                 </p>
               )}
             </div>
-          ))}
-        </div>
+          ))
+        ) : (
+          <p className="text-center text-gray-500">
+            まだメッセージがありません。
+          </p>
+        )}
       </div>
-      <form onSubmit={handleSendMessage} className="flex space-x-2">
-        <input
-          type="text"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="Type a message..."
-          className="flex-1 p-2 rounded-md border border-gray-300"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-        >
-          Send
-        </button>
+
+      <form onSubmit={handleSendMessage} className="flex flex-col space-y-2">
+        <div className="flex space-x-2">
+          <input
+            type="file"
+            onChange={(e) => setFile(e.target.files[0])}
+            className="p-2 border border-gray-300 rounded-md w-1/4"
+          />
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="メッセージを入力..."
+            className="flex-1 p-2 border border-gray-300 rounded-md"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-blue-500 text-white font-bold rounded-md hover:bg-blue-600 transition-colors"
+          >
+            送信
+          </button>
+        </div>
+
+        {/* 選択されたファイルを表示 */}
+        {file && (
+          <div className="text-sm text-gray-700">
+            選択中のファイル: {file.name} ({(file.size / 1024).toFixed(1)} KB)
+            {file.type.startsWith("image/") && (
+              <img
+                src={URL.createObjectURL(file)}
+                alt="preview"
+                className="mt-2 max-h-32 rounded"
+              />
+            )}
+          </div>
+        )}
       </form>
     </div>
   );
 }
-
-export default GroupChat;

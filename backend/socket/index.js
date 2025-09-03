@@ -1,40 +1,38 @@
 // backend/socket/index.js
-const Message = require("../models/Message"); // ここでMessageモデルをインポート
+const Message = require("../models/Message"); // このインポートは、今後の機能拡張のために残しておきます
 
 let io;
 
 const socketHandler = (socket) => {
   console.log("New client connected:", socket.id);
 
+  // 個人ルーム
   socket.on("join", (userId) => {
     socket.userId = userId;
     socket.join(userId);
     console.log(`User ${userId} joined personal room`);
   });
 
+  // グループチャット専用
   socket.on("joinGroup", ({ groupId, userId }) => {
     socket.userId = userId;
     socket.join(groupId);
     console.log(`User ${userId} joined group ${groupId}`);
   });
 
-  // 💡 ここにメッセージ送信のロジックを追加
-  socket.on("groupMessage", async (msg) => {
-    try {
-      // MongoDBに新しいメッセージを保存
-      const newMessage = new Message({
-        group: msg.groupId,
-        sender: msg.sender,
-        text: msg.text,
-        readBy: [msg.sender], // 送信者自身を既読リストに含める
-      });
-      await newMessage.save();
+  // メッセージ送信のロジック (保存ロジックを削除)
+  socket.on("groupMessage", (msg) => {
+    // クライアントから受け取ったメッセージをそのままグループ内の全員に送信
+    // メッセージの保存はbackend/routes/message.jsで行う
+    io.to(msg.group).emit("receiveGroupMessage", msg);
+  });
 
-      // 同じグループの全員に、保存されたメッセージを送信
-      io.to(msg.groupId).emit("receiveGroupMessage", newMessage);
-    } catch (err) {
-      console.error("Group message save error:", err);
-    }
+  // 既読ステータス更新のロジック
+  socket.on("readStatusUpdated", (updatedMessage) => {
+    io.to(updatedMessage.group.toString()).emit(
+      "readStatusUpdated",
+      updatedMessage
+    );
   });
 
   socket.on("disconnect", () => {
