@@ -1,5 +1,5 @@
 // frontend/src/components/GroupChat.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
 import { io } from "socket.io-client";
@@ -17,6 +17,9 @@ export default function GroupChat({ groupId }) {
   const [loading, setLoading] = useState(true);
   const [gifQuery, setGifQuery] = useState("");
   const [gifResults, setGifResults] = useState([]);
+  const [searchText, setSearchText] = useState("");
+
+  const messagesEndRef = useRef(null);
 
   // メッセージ取得
   const fetchMessages = async () => {
@@ -80,6 +83,11 @@ export default function GroupChat({ groupId }) {
     };
   }, [socket, user, groupId]);
 
+  // 最新メッセージまで自動スクロール
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
   // メッセージ送信
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -120,14 +128,25 @@ export default function GroupChat({ groupId }) {
         group: groupId,
         sender: user.uid,
         fileUrl: url,
-        // textの代わりにgifQueryを送信
         gifQuery: gifQuery,
       });
       socket.emit("groupMessage", res.data);
-      // GIF送信後は検索結果をクリア
       setGifResults([]);
     } catch (err) {
       console.error("GIF送信に失敗:", err);
+    }
+  };
+
+  const handleSearchMessages = async () => {
+    if (!searchText.trim()) return;
+
+    try {
+      const res = await axios.get(`${API_URL}/messages/search`, {
+        params: { groupId, query: searchText },
+      });
+      setMessages(res.data);
+    } catch (err) {
+      console.error("検索に失敗:", err);
     }
   };
 
@@ -146,10 +165,34 @@ export default function GroupChat({ groupId }) {
     return <div className="text-center p-4">メッセージを取得中...</div>;
 
   return (
-    <div className="flex flex-col h-screen p-4 bg-gray-100 rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-4 text-center">グループチャット</h2>
+    <div className="flex flex-col h-screen p-2 sm:p-4 bg-gray-100 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-2 sm:mb-4 text-center">
+        グループチャット
+      </h2>
 
-      <div className="flex-1 overflow-y-auto mb-4 p-2 bg-white rounded-md">
+      {/* メッセージ検索 */}
+      <div className="my-2 flex flex-col sm:flex-row sm:items-center gap-2">
+        <input
+          type="text"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="メッセージを検索..."
+          className="p-2 border rounded-md flex-1 w-full"
+        />
+        <button
+          type="button"
+          onClick={handleSearchMessages}
+          className="px-3 py-2 bg-green-500 text-white rounded-md w-full sm:w-auto"
+        >
+          検索
+        </button>
+      </div>
+
+      {/* メッセージ一覧（レスポンシブで高さ調整） */}
+      <div
+        className="flex-1 overflow-y-auto mb-2 p-2 bg-white rounded-md"
+        style={{ maxHeight: "calc(100vh - 240px)" }}
+      >
         {messages.length > 0 ? (
           messages.map((msg) => (
             <div
@@ -188,14 +231,16 @@ export default function GroupChat({ groupId }) {
             まだメッセージがありません。
           </p>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
+      {/* メッセージ入力フォーム */}
       <form onSubmit={handleSendMessage} className="flex flex-col space-y-2">
-        <div className="flex space-x-2">
+        <div className="flex flex-col sm:flex-row sm:space-x-2">
           <input
             type="file"
             onChange={(e) => setFile(e.target.files[0])}
-            className="p-2 border border-gray-300 rounded-md w-1/4"
+            className="p-2 border border-gray-300 rounded-md w-full sm:w-1/4 mb-2 sm:mb-0"
           />
           <input
             type="text"
@@ -206,7 +251,7 @@ export default function GroupChat({ groupId }) {
           />
           <button
             type="submit"
-            className="px-4 py-2 bg-blue-500 text-white font-bold rounded-md hover:bg-blue-600 transition-colors"
+            className="px-4 py-2 bg-blue-500 text-white font-bold rounded-md hover:bg-blue-600 transition-colors mt-2 sm:mt-0"
           >
             送信
           </button>

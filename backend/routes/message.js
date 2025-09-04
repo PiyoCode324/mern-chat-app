@@ -151,4 +151,35 @@ router.post("/:id/read", async (req, res) => {
   }
 });
 
+// GET /api/messages/search?groupId=xxx&query=キーワード
+router.get("/search", async (req, res) => {
+  try {
+    const { groupId, query } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+      return res.status(400).json({ message: "無効なグループIDです" });
+    }
+
+    if (!query || query.trim() === "") {
+      return res.status(400).json({ message: "検索ワードが必要です" });
+    }
+
+    const messages = await Message.find({
+      group: groupId,
+      $or: [
+        { text: { $regex: query, $options: "i" } }, // テキスト検索
+        { fileName: { $regex: query, $options: "i" } }, // ファイル名検索
+        { gifQuery: { $regex: query, $options: "i" } }, // GIF検索ワード
+      ],
+    })
+      .sort({ createdAt: -1 }) // 新しい順
+      .limit(50); // 最大50件までに制限（負荷対策）
+
+    res.json(messages);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "検索に失敗しました" });
+  }
+});
+
 module.exports = router;
