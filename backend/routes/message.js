@@ -63,10 +63,6 @@ router.post("/", upload.single("file"), async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(group)) {
-      return res.status(400).json({ message: "無効なグループIDです" });
-    }
-
     const message = new Message({
       group,
       sender,
@@ -79,6 +75,11 @@ router.post("/", upload.single("file"), async (req, res) => {
     await message.save();
     res.status(201).json(message);
   } catch (err) {
+    // Multer のファイルサイズエラーを判定
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ message: "ファイルサイズが大きすぎます" });
+    }
+
     console.error(err);
     res.status(500).json({ message: "メッセージ投稿に失敗しました" });
   }

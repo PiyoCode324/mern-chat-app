@@ -93,6 +93,13 @@ export default function GroupChat({ groupId }) {
     e.preventDefault();
     if (!newMessage.trim() && !file) return;
 
+    // フロント側サイズチェック（5MBまで）
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file && file.size > MAX_SIZE) {
+      alert("⚠️ ファイルが大きすぎます（5MBまで）。");
+      return;
+    }
+
     try {
       const formData = new FormData();
       formData.append("group", groupId);
@@ -105,11 +112,29 @@ export default function GroupChat({ groupId }) {
       });
 
       socket.emit("groupMessage", res.data);
-
       setNewMessage("");
       setFile(null);
     } catch (err) {
       console.error("メッセージ送信に失敗:", err);
+
+      // Multer の fileSize エラーやその他のサーバーエラーを判定
+      if (err.response) {
+        // サーバーがレスポンスを返している場合
+        const status = err.response.status;
+        const msg = err.response.data?.message || "アップロードに失敗しました";
+
+        if (status === 500 && msg.includes("File too large")) {
+          alert("⚠️ ファイルがサーバーの制限を超えています（5MBまで）。");
+        } else {
+          alert(`⚠️ エラーが発生しました: ${msg}`);
+        }
+      } else if (err.request) {
+        // リクエストは送ったが応答がない場合
+        alert("⚠️ サーバーに接続できません。ネットワークを確認してください。");
+      } else {
+        // その他のエラー
+        alert(`⚠️ エラーが発生しました: ${err.message}`);
+      }
     }
   };
 
@@ -239,9 +264,18 @@ export default function GroupChat({ groupId }) {
         <div className="flex flex-col sm:flex-row sm:space-x-2">
           <input
             type="file"
-            onChange={(e) => setFile(e.target.files[0])}
+            onChange={(e) => {
+              const selectedFile = e.target.files[0];
+              if (selectedFile && selectedFile.size > 5 * 1024 * 1024) {
+                // 5MB
+                alert("ファイルサイズは5MBまでです");
+                return;
+              }
+              setFile(selectedFile);
+            }}
             className="p-2 border border-gray-300 rounded-md w-full sm:w-1/4 mb-2 sm:mb-0"
           />
+
           <input
             type="text"
             value={newMessage}
