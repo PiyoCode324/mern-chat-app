@@ -14,6 +14,7 @@ export default function GroupChat({ groupId }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [socket, setSocket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gifQuery, setGifQuery] = useState("");
@@ -24,7 +25,14 @@ export default function GroupChat({ groupId }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
   const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+  const ALLOWED_TYPES = [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "application/pdf",
+  ]; // 許可ファイルタイプ
 
   const showModal = (msg) => {
     setModalMessage(msg);
@@ -99,13 +107,46 @@ export default function GroupChat({ groupId }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ファイル選択時
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (!selectedFile) return;
+
+    if (!ALLOWED_TYPES.includes(selectedFile.type)) {
+      showModal("⚠️ この種類のファイルは送信できません");
+      e.target.value = "";
+      setFile(null);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
+      return;
+    }
+
+    if (selectedFile.size > MAX_SIZE) {
+      showModal("⚠️ ファイルサイズは5MBまでです");
+      return;
+    }
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+
+    setFile(selectedFile);
+    if (selectedFile.type.startsWith("image/")) {
+      setPreviewUrl(URL.createObjectURL(selectedFile));
+    }
+  };
+
   // メッセージ送信
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() && !file) return;
 
-    if (file && file.size > MAX_SIZE) {
-      showModal("⚠️ ファイルが大きすぎます（5MBまで）。");
+    if (!navigator.onLine) {
+      showModal("⚠️ オフラインです。ネットワークを確認してください。");
+      console.error("オフラインのため送信できません");
       return;
     }
 
@@ -118,18 +159,22 @@ export default function GroupChat({ groupId }) {
 
       const res = await axios.post(`${API_URL}/messages`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        timeout: 10000,
       });
 
       socket.emit("groupMessage", res.data);
       setNewMessage("");
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
     } catch (err) {
       console.error("メッセージ送信に失敗:", err);
-
       if (err.response) {
         const status = err.response.status;
         const msg = err.response.data?.message || "アップロードに失敗しました";
-
         if (
           status === 413 ||
           (status === 500 && msg.includes("File too large"))
@@ -212,7 +257,6 @@ export default function GroupChat({ groupId }) {
         グループチャット
       </h2>
 
-      {/* モーダル表示 */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -288,17 +332,10 @@ export default function GroupChat({ groupId }) {
         <div className="flex flex-col sm:flex-row sm:space-x-2">
           <input
             type="file"
-            onChange={(e) => {
-              const selectedFile = e.target.files[0];
-              if (selectedFile && selectedFile.size > MAX_SIZE) {
-                showModal("⚠️ ファイルサイズは5MBまでです");
-                return;
-              }
-              setFile(selectedFile);
-            }}
+            ref={fileInputRef}
+            onChange={handleFileChange}
             className="p-2 border border-gray-300 rounded-md w-full sm:w-1/4 mb-2 sm:mb-0"
           />
-
           <input
             type="text"
             value={newMessage}
@@ -317,9 +354,9 @@ export default function GroupChat({ groupId }) {
         {file && (
           <div className="text-sm text-gray-700">
             選択中のファイル: {file.name} ({(file.size / 1024).toFixed(1)} KB)
-            {file.type.startsWith("image/") && (
+            {file.type.startsWith("image/") && previewUrl && (
               <img
-                src={URL.createObjectURL(file)}
+                src={previewUrl}
                 alt="preview"
                 className="mt-2 max-h-32 rounded"
               />
@@ -343,7 +380,6 @@ export default function GroupChat({ groupId }) {
           >
             Search
           </button>
-
           <div className="flex flex-wrap gap-2 mt-2">
             {gifResults.map((url, index) => (
               <img
