@@ -40,7 +40,7 @@ const upload = multer({
 // JSONリクエストをパースするためのミドルウェアを追加
 router.use(express.json());
 
-// POST /api/messages (通常ファイルアップロード用)
+// POST /api/messages (ファイルアップロード用)
 router.post("/", upload.single("file"), async (req, res) => {
   try {
     const { group, sender, text } = req.body;
@@ -58,9 +58,7 @@ router.post("/", upload.single("file"), async (req, res) => {
     }
 
     if (!group || !sender || (!text && !fileUrl)) {
-      return res.status(400).json({
-        message: "グループ、送信者、およびテキストまたはファイルは必須です",
-      });
+      return res.status(400).json({ message: "必須項目が不足しています" });
     }
 
     const message = new Message({
@@ -75,14 +73,22 @@ router.post("/", upload.single("file"), async (req, res) => {
     await message.save();
     res.status(201).json(message);
   } catch (err) {
-    // Multer のファイルサイズエラーを判定
-    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
-      return res.status(400).json({ message: "ファイルサイズが大きすぎます" });
-    }
-
     console.error(err);
     res.status(500).json({ message: "メッセージ投稿に失敗しました" });
   }
+});
+
+// Multer エラー専用ハンドラー
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res
+        .status(413)
+        .json({ message: "ファイルが大きすぎます (5MBまで)" });
+    }
+    return res.status(400).json({ message: `Multer エラー: ${err.code}` });
+  }
+  next(err); // その他のエラーは既存のエラー処理に流す
 });
 
 // POST /api/messages/gif (GIF送信専用)

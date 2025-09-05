@@ -4,6 +4,7 @@ import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
 import { io } from "socket.io-client";
 import { searchGifs } from "../api/giphy";
+import Modal from "./Modal";
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 const API_URL = import.meta.env.VITE_API_URL;
@@ -19,7 +20,16 @@ export default function GroupChat({ groupId }) {
   const [gifResults, setGifResults] = useState([]);
   const [searchText, setSearchText] = useState("");
 
+  const [modalMessage, setModalMessage] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   const messagesEndRef = useRef(null);
+  const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+
+  const showModal = (msg) => {
+    setModalMessage(msg);
+    setIsModalOpen(true);
+  };
 
   // メッセージ取得
   const fetchMessages = async () => {
@@ -28,6 +38,7 @@ export default function GroupChat({ groupId }) {
       setMessages(res.data);
     } catch (err) {
       console.error("メッセージ取得に失敗:", err);
+      showModal("メッセージの取得に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -93,10 +104,8 @@ export default function GroupChat({ groupId }) {
     e.preventDefault();
     if (!newMessage.trim() && !file) return;
 
-    // フロント側サイズチェック（5MBまで）
-    const MAX_SIZE = 5 * 1024 * 1024;
     if (file && file.size > MAX_SIZE) {
-      alert("⚠️ ファイルが大きすぎます（5MBまで）。");
+      showModal("⚠️ ファイルが大きすぎます（5MBまで）。");
       return;
     }
 
@@ -117,23 +126,24 @@ export default function GroupChat({ groupId }) {
     } catch (err) {
       console.error("メッセージ送信に失敗:", err);
 
-      // Multer の fileSize エラーやその他のサーバーエラーを判定
       if (err.response) {
-        // サーバーがレスポンスを返している場合
         const status = err.response.status;
         const msg = err.response.data?.message || "アップロードに失敗しました";
 
-        if (status === 500 && msg.includes("File too large")) {
-          alert("⚠️ ファイルがサーバーの制限を超えています（5MBまで）。");
+        if (
+          status === 413 ||
+          (status === 500 && msg.includes("File too large"))
+        ) {
+          showModal("⚠️ ファイルがサーバーの制限を超えています（5MBまで）。");
         } else {
-          alert(`⚠️ エラーが発生しました: ${msg}`);
+          showModal(`⚠️ エラーが発生しました: ${msg}`);
         }
       } else if (err.request) {
-        // リクエストは送ったが応答がない場合
-        alert("⚠️ サーバーに接続できません。ネットワークを確認してください。");
+        showModal(
+          "⚠️ サーバーに接続できません。ネットワークを確認してください。"
+        );
       } else {
-        // その他のエラー
-        alert(`⚠️ エラーが発生しました: ${err.message}`);
+        showModal(`⚠️ エラーが発生しました: ${err.message}`);
       }
     }
   };
@@ -141,8 +151,13 @@ export default function GroupChat({ groupId }) {
   // GIF検索
   const handleSearchGif = async () => {
     if (!gifQuery.trim()) return;
-    const results = await searchGifs(gifQuery);
-    setGifResults(results);
+    try {
+      const results = await searchGifs(gifQuery);
+      setGifResults(results);
+    } catch (err) {
+      console.error("GIF検索に失敗:", err);
+      showModal("GIF検索に失敗しました");
+    }
   };
 
   // GIF送信
@@ -159,6 +174,7 @@ export default function GroupChat({ groupId }) {
       setGifResults([]);
     } catch (err) {
       console.error("GIF送信に失敗:", err);
+      showModal("GIF送信に失敗しました");
     }
   };
 
@@ -172,6 +188,7 @@ export default function GroupChat({ groupId }) {
       setMessages(res.data);
     } catch (err) {
       console.error("検索に失敗:", err);
+      showModal("メッセージ検索に失敗しました");
     }
   };
 
@@ -195,6 +212,13 @@ export default function GroupChat({ groupId }) {
         グループチャット
       </h2>
 
+      {/* モーダル表示 */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        message={modalMessage}
+      />
+
       {/* メッセージ検索 */}
       <div className="my-2 flex flex-col sm:flex-row sm:items-center gap-2">
         <input
@@ -213,7 +237,7 @@ export default function GroupChat({ groupId }) {
         </button>
       </div>
 
-      {/* メッセージ一覧（レスポンシブで高さ調整） */}
+      {/* メッセージ一覧 */}
       <div
         className="flex-1 overflow-y-auto mb-2 p-2 bg-white rounded-md"
         style={{ maxHeight: "calc(100vh - 240px)" }}
@@ -266,9 +290,8 @@ export default function GroupChat({ groupId }) {
             type="file"
             onChange={(e) => {
               const selectedFile = e.target.files[0];
-              if (selectedFile && selectedFile.size > 5 * 1024 * 1024) {
-                // 5MB
-                alert("ファイルサイズは5MBまでです");
+              if (selectedFile && selectedFile.size > MAX_SIZE) {
+                showModal("⚠️ ファイルサイズは5MBまでです");
                 return;
               }
               setFile(selectedFile);
