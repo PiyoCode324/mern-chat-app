@@ -5,6 +5,7 @@ import AuthPage from "./pages/AuthPage";
 import Chat from "./components/Chat";
 import GroupsPage from "./pages/GroupsPage";
 import ChatPage from "./pages/ChatPage";
+import Profile from "./components/Profile"; // 追加
 
 function App() {
   const currentUserId = "user1"; // 仮ログインユーザー
@@ -13,10 +14,13 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* 認証ページ */}
         <Route path="/" element={<AuthPage />} />
+
+        {/* Socket.ioテスト */}
         <Route path="/socket" element={<SocketTest />} />
 
-        {/* 個人チャット（既存） */}
+        {/* 個人チャット */}
         <Route
           path="/chat/user1"
           element={
@@ -35,6 +39,9 @@ function App() {
 
         {/* グループチャットページ */}
         <Route path="/groups/:id" element={<ChatPage />} />
+
+        {/* プロフィール編集ページ */}
+        <Route path="/profile" element={<Profile />} />
       </Routes>
     </Router>
   );
