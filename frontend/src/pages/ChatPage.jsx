@@ -1,7 +1,7 @@
 // frontend/src/pages/ChatPage.jsx
 import { useParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import GroupChat from "../components/GroupChat";
+import GroupChat from "../components/chat/GroupChat";
 
 export default function ChatPage() {
   const { id } = useParams();

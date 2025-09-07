@@ -1,9 +1,9 @@
 // frontend/src/components/Profile.jsx
 import React, { useState, useEffect } from "react";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "../../hooks/useAuth";
 import axios from "axios";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../firebase"; // Firebase 初期化ファイル
+import { storage } from "../../firebase"; // Firebase 初期化ファイル
 
 const API_URL = import.meta.env.VITE_API_URL;
 

@@ -1,11 +1,11 @@
 // frontend/src/components/GroupChat.jsx
 import React, { useState, useEffect, useRef } from "react";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "../../hooks/useAuth";
 import { io } from "socket.io-client";
 import axios from "axios";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
-import Modal from "./Modal";
+import Modal from "../ui/Modal";
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 const API_URL = import.meta.env.VITE_API_URL;
@@ -137,6 +137,7 @@ export default function GroupChat({ groupId }) {
         setPreviewUrl={setPreviewUrl}
         fileInputRef={fileInputRef}
         showModal={showModal}
+        setMessages={setMessages}
       />
     </div>
   );

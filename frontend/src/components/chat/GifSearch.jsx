@@ -1,6 +1,6 @@
 // frontend/src/components/GifSearch.jsx
 import React from "react";
-import { searchGifs } from "../api/giphy";
+import { searchGifs } from "../../api/giphy";
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL;

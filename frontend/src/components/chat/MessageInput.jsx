@@ -5,7 +5,12 @@ import GifSearch from "./GifSearch";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const MAX_SIZE = 5 * 1024 * 1024;
-const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/gif", "application/pdf"];
+const ALLOWED_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "application/pdf",
+];
 
 export default function MessageInput({
   groupId,
@@ -19,6 +24,7 @@ export default function MessageInput({
   setPreviewUrl,
   fileInputRef,
   showModal,
+  setMessages,
 }) {
   const [gifQuery, setGifQuery] = useState("");
   const [gifResults, setGifResults] = useState([]);
@@ -59,6 +65,21 @@ export default function MessageInput({
       return;
     }
 
+    // 楽観的メッセージを先に表示
+    const tempMessage = {
+      _id: "temp-" + Date.now(),
+      group: groupId,
+      sender: user.uid,
+      text: newMessage,
+      file: previewUrl || null,
+      createdAt: new Date().toISOString(),
+      pending: true, // UIで「送信中...」扱いできるようにフラグ
+    };
+    // ここで props から渡ってきている setMessages を呼び出す
+    if (typeof setMessages === "function") {
+      setMessages((prev) => [...prev, tempMessage]);
+    }
+
     try {
       const formData = new FormData();
       formData.append("group", groupId);
@@ -72,6 +93,14 @@ export default function MessageInput({
       });
 
       socket.emit("groupMessage", res.data);
+
+      // 送信成功 → 仮メッセージを本物に置き換える処理
+      if (typeof setMessages === "function") {
+        setMessages((prev) =>
+          prev.map((msg) => (msg._id === tempMessage._id ? res.data : msg))
+        );
+      }
+
       setNewMessage("");
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -82,6 +111,13 @@ export default function MessageInput({
     } catch (err) {
       console.error("メッセージ送信に失敗:", err);
       showModal("⚠️ メッセージ送信に失敗しました");
+
+      // エラーなら仮メッセージを消す or エラー表示にする
+      if (typeof setMessages === "function") {
+        setMessages((prev) =>
+          prev.filter((msg) => msg._id !== tempMessage._id)
+        );
+      }
     }
   };
 
@@ -113,7 +149,11 @@ export default function MessageInput({
         <div className="text-sm text-gray-700">
           選択中のファイル: {file.name} ({(file.size / 1024).toFixed(1)} KB)
           {file.type.startsWith("image/") && previewUrl && (
-            <img src={previewUrl} alt="preview" className="mt-2 max-h-32 rounded" />
+            <img
+              src={previewUrl}
+              alt="preview"
+              className="mt-2 max-h-32 rounded"
+            />
           )}
         </div>
       )}

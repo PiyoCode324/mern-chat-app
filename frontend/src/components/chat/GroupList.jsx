@@ -23,6 +23,13 @@ export default function GroupList({ groups, onDelete, currentUserId }) {
     }
   };
 
+  // 個人チャット用の名前取得関数
+  const getPrivateChatName = (group) => {
+    if (group.type !== "private" || !group.members) return group.name;
+    const otherUser = group.members.find((id) => id !== currentUserId);
+    return otherUser || "Private Chat";
+  };
+
   return (
     <ul className="p-4 space-y-2">
       {groups.map((g) => (
@@ -30,14 +37,25 @@ export default function GroupList({ groups, onDelete, currentUserId }) {
           key={g._id}
           className="flex justify-between items-center bg-gray-100 p-2 rounded"
         >
-          {/* グループ名にリンクをつける */}
+          {/* チャットリンク */}
           <Link
             to={`/groups/${g._id}`}
-            className="text-blue-600 hover:underline flex-1"
+            className="flex-1 flex items-center justify-between"
           >
-            {g.name}
+            <span>
+              {g.type === "private" ? "👤 " : "👥 "}
+              {g.type === "private" ? getPrivateChatName(g) : g.name}
+            </span>
+
+            {/* 未読数バッジ */}
+            {g.unreadCount > 0 && (
+              <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                {g.unreadCount}
+              </span>
+            )}
           </Link>
 
+          {/* 削除ボタン（作成者のみ） */}
           {g.createdBy === currentUserId && (
             <button
               onClick={() => handleDelete(g._id, g.createdBy)}
