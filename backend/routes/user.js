@@ -2,6 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
+const Group = require("../models/Group"); // Groupモデルを追加
+const GroupMember = require("../models/GroupMember"); // 💡 GroupMemberモデルを追加
 
 // 🔹 新規ユーザー登録
 router.post("/", async (req, res) => {
@@ -59,6 +61,35 @@ router.patch("/:id", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "ユーザー更新に失敗しました" });
+  }
+});
+
+// 🔹 管理者権限のあるグループ一覧取得
+router.get("/:id/admin-groups", async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // 💡 修正: GroupMemberコレクションからisAdminがtrueのものを検索
+    const adminMemberships = await GroupMember.find({
+      userId: userId,
+      isAdmin: true,
+    }).lean();
+
+    if (adminMemberships.length === 0) {
+      // 管理者メンバーシップがない場合は空の配列を返す
+      return res.json([]);
+    }
+
+    // 見つかったグループIDのリストを作成
+    const groupIds = adminMemberships.map((member) => member.groupId);
+
+    // グループIDに基づいてGroupコレクションからグループ情報を取得
+    const adminGroups = await Group.find({ _id: { $in: groupIds } }).lean();
+
+    res.json(adminGroups);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "管理者グループの取得に失敗しました" });
   }
 });
 

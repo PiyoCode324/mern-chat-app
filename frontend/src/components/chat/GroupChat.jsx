@@ -6,6 +6,7 @@ import axios from "axios";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import Modal from "../ui/Modal";
+import { v4 as uuidv4 } from "uuid"; // 仮ID生成用
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 const API_URL = import.meta.env.VITE_API_URL;
@@ -30,11 +31,21 @@ export default function GroupChat({ groupId }) {
     setIsModalOpen(true);
   };
 
-  // メッセージ取得
+  // メッセージ取得（sender を文字列に統一）
   const fetchMessages = async () => {
     try {
-      const res = await axios.get(`${API_URL}/messages/group/${groupId}`);
-      setMessages(res.data);
+      // 💡 修正: user.uidをクエリパラメータとして追加
+      const res = await axios.get(`${API_URL}/messages/group/${groupId}`, {
+        params: { userId: user.uid },
+      });
+      const normalized = res.data.map((msg) => ({
+        ...msg,
+        sender:
+          typeof msg.sender === "string"
+            ? msg.sender
+            : msg.sender?._id || "unknown",
+      }));
+      setMessages(normalized);
     } catch (err) {
       console.error("メッセージ取得に失敗:", err);
       showModal("メッセージの取得に失敗しました");
@@ -73,27 +84,61 @@ export default function GroupChat({ groupId }) {
   // Socket.io イベント & メッセージ取得
   useEffect(() => {
     if (!socket || !user || !groupId) return;
+
     socket.emit("joinGroup", { groupId, userId: user.uid });
 
-    socket.on("receiveGroupMessage", (msg) => {
-      setMessages((prev) => [...prev, msg]);
+    // 🔹 メッセージ受信
+    socket.on("message_received", ({ groupId: gId, message, selfOnly }) => {
+      const normalizedMsg = {
+        ...message,
+        sender:
+          typeof message.sender === "string"
+            ? message.sender
+            : message.sender?._id || "unknown",
+      };
+
+      if (gId !== groupId) return;
+
+      setMessages((prev) => {
+        const isMessageExists = prev.some((m) => m._id === normalizedMsg._id);
+        if (isMessageExists) return prev;
+
+        // ✅ 送信者本人は常に表示
+        if (normalizedMsg.sender === user.uid) {
+          return [...prev, normalizedMsg];
+        }
+
+        // 🔇 ミュート中の他人のメッセージは追加しない
+        if (!selfOnly && normalizedMsg.sender !== user.uid) {
+          return [...prev, normalizedMsg];
+        }
+        prev;
+      });
     });
 
+    // 🔹 既読ステータス更新
     socket.on("readStatusUpdated", (updatedMsg) => {
+      const normalizedMsg = {
+        ...updatedMsg,
+        sender:
+          typeof updatedMsg.sender === "string"
+            ? updatedMsg.sender
+            : updatedMsg.sender?._id || "unknown",
+      };
       setMessages((prev) =>
-        prev.map((msg) => (msg._id === updatedMsg._id ? updatedMsg : msg))
+        prev.map((msg) => (msg._id === normalizedMsg._id ? normalizedMsg : msg))
       );
     });
 
     fetchMessages();
 
     return () => {
-      socket.off("receiveGroupMessage");
+      socket.off("message_received");
       socket.off("readStatusUpdated");
     };
   }, [socket, user, groupId]);
 
-  // 受信メッセージの既読更新
+  // メッセージ既読チェック
   useEffect(() => {
     if (!user) return;
     messages.forEach((msg) => {
@@ -102,6 +147,54 @@ export default function GroupChat({ groupId }) {
       }
     });
   }, [messages, user]);
+
+  // メッセージ送信（仮メッセージ対応）
+  const handleSendMessage = async (text, fileData) => {
+    if (!user || (!text && !fileData)) return;
+
+    const tempId = uuidv4();
+    const tempMessage = {
+      _tempId: tempId,
+      sender: user.uid,
+      text,
+      fileUrl: fileData ? URL.createObjectURL(fileData) : null,
+      createdAt: new Date().toISOString(),
+      readBy: [],
+    };
+
+    setMessages((prev) => [...prev, tempMessage]);
+
+    try {
+      const formData = new FormData();
+      formData.append("text", text);
+      if (fileData) formData.append("file", fileData);
+      const res = await axios.post(
+        `${API_URL}/messages/group/${groupId}`,
+        formData,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        }
+      );
+
+      const normalizedRes = {
+        ...res.data,
+        sender:
+          typeof res.data.sender === "string"
+            ? res.data.sender
+            : res.data.sender?._id || "unknown",
+      };
+
+      setMessages((prev) =>
+        prev.map((msg) => (msg._tempId === tempId ? normalizedRes : msg))
+      );
+
+      socket.emit("send_message", { groupId, message: normalizedRes });
+    } catch (err) {
+      console.error("メッセージ送信失敗:", err);
+      showModal("メッセージの送信に失敗しました");
+      setMessages((prev) => prev.filter((msg) => msg._tempId !== tempId));
+    }
+  };
 
   if (!user) return <div>ユーザーを認証しています...</div>;
   if (loading)
@@ -138,6 +231,7 @@ export default function GroupChat({ groupId }) {
         fileInputRef={fileInputRef}
         showModal={showModal}
         setMessages={setMessages}
+        onSendMessage={handleSendMessage}
       />
     </div>
   );

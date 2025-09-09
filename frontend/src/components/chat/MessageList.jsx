@@ -13,13 +13,16 @@ export default function MessageList({
 
   useEffect(() => {
     const uniqueUserIds = [...new Set(messages.map((m) => m.sender))];
+    console.log("🔍 Unique user IDs in messages:", uniqueUserIds);
+
     uniqueUserIds.forEach(async (uid) => {
       if (!userProfiles[uid]) {
         try {
           const res = await axios.get(`${API_URL}/users/${uid}`);
+          console.log("✅ Fetched user profile:", uid, res.data);
           setUserProfiles((prev) => ({ ...prev, [uid]: res.data }));
         } catch (err) {
-          console.error("ユーザー情報取得失敗:", err);
+          console.error("⚠️ ユーザー情報取得失敗:", uid, err);
         }
       }
     });
@@ -42,13 +45,11 @@ export default function MessageList({
                 isCurrentUser ? "justify-end" : "justify-start"
               }`}
             >
-              {/* メッセージとアイコンをwrap */}
               <div
                 className={`flex ${
                   isCurrentUser ? "flex-row-reverse" : "flex-row"
                 } max-w-[70%]`}
               >
-                {/* ユーザーアイコン */}
                 {profile.iconUrl && (
                   <img
                     src={profile.iconUrl}
@@ -59,7 +60,6 @@ export default function MessageList({
                   />
                 )}
 
-                {/* メッセージ本体 */}
                 <div
                   className={`p-2 rounded-lg ${
                     isCurrentUser
@@ -83,7 +83,6 @@ export default function MessageList({
                       ? new Date(msg.createdAt).toLocaleTimeString()
                       : ""}
                   </div>
-                  {/* 既読人数 */}
                   {isCurrentUser && (
                     <p className="text-xs text-gray-500">
                       {`既読: ${

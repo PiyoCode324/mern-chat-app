@@ -1,101 +1,53 @@
-// // backend/socket/index.js
-// const Message = require("../models/Message"); // このインポートは、今後の機能拡張のために残しておきます
-
-// let io;
-
-// const socketHandler = (socket) => {
-//   console.log("New client connected:", socket.id);
-
-//   // 個人ルーム
-//   socket.on("join", (userId) => {
-//     socket.userId = userId;
-//     socket.join(userId);
-//     console.log(`User ${userId} joined personal room`);
-//   });
-
-//   // グループチャット専用
-//   socket.on("joinGroup", ({ groupId, userId }) => {
-//     socket.userId = userId;
-//     socket.join(groupId);
-//     console.log(`User ${userId} joined group ${groupId}`);
-//   });
-
-//   // メッセージ送信のロジック (保存ロジックを削除)
-//   socket.on("groupMessage", (msg) => {
-//     // クライアントから受け取ったメッセージをそのままグループ内の全員に送信
-//     // メッセージの保存はbackend/routes/message.jsで行う
-//     io.to(msg.group).emit("receiveGroupMessage", msg);
-//   });
-
-//   // 既読ステータス更新のロジック
-//   socket.on("readStatusUpdated", (updatedMessage) => {
-//     io.to(updatedMessage.group.toString()).emit(
-//       "readStatusUpdated",
-//       updatedMessage
-//     );
-//   });
-
-//   socket.on("disconnect", () => {
-//     console.log("Client disconnected:", socket.id);
-//   });
-// };
-
-// module.exports = {
-//   init: (httpServer) => {
-//     const { Server } = require("socket.io");
-//     io = new Server(httpServer, {
-//       cors: {
-//         origin: [
-//           "http://localhost:5173",
-//           "https://mern-chat-app-frontend-zk7s.onrender.com",
-//         ],
-//         methods: ["GET", "POST"],
-//       },
-//     });
-
-//     io.on("connection", socketHandler);
-//     return io;
-//   },
-//   getIo: () => {
-//     if (!io) {
-//       throw new Error("Socket.io not initialized!");
-//     }
-//     return io;
-//   },
-// };
-
 // backend/socket/index.js
-const Message = require("../models/Message"); // 将来の拡張用に残す
+const Message = require("../models/Message");
+const GroupMember = require("../models/GroupMember");
 
 let io;
+const userSockets = new Map(); // userId -> socket.id
 
 const socketHandler = (socket) => {
-  console.log("New client connected:", socket.id);
+  console.log("🔌 New client connected:", socket.id);
 
-  // 個人ルーム
-  socket.on("join", (userId) => {
-    socket.userId = userId;
-    socket.join(userId);
-    console.log(`User ${userId} joined personal room`);
-  });
-
-  // グループチャット専用
   socket.on("joinGroup", ({ groupId, userId }) => {
     socket.userId = userId;
-    socket.join(groupId);
-    console.log(`User ${userId} joined group ${groupId}`);
+    // ユーザーIDをキーとしてソケットIDを保存
+    userSockets.set(userId.toString(), socket.id);
+    socket.join(groupId); // グループIDでのルーム参加も引き続き必要
+    console.log(`👤 User ${userId} joined group ${groupId}`);
   });
 
-  // メッセージ送信のロジック
-  socket.on("groupMessage", (msg) => {
-    // グループ内全員に送信
-    io.to(msg.group).emit("message_received", {
-      groupId: msg.group,
-      message: msg,
-    });
+  socket.on("groupMessage", async (msg) => {
+    const { group, senderId } = msg;
+    console.log("✉️ groupMessage received:", msg);
+    try {
+      const members = await GroupMember.find({ groupId: group }).lean();
+      members.forEach((member) => {
+        if (member.isBanned) return;
+        if (member.isMuted && member.userId.toString() !== senderId) return;
+
+        const targetSocketId =
+          member.userId.toString() === senderId && member.isMuted
+            ? socket.id
+            : userSockets.get(member.userId.toString());
+
+        if (targetSocketId) {
+          io.to(targetSocketId).emit("message_received", {
+            groupId: group,
+            message: msg,
+            selfOnly: member.userId.toString() === senderId && member.isMuted,
+          });
+          console.log(
+            "📤 message emitted to:",
+            member.userId.toString(),
+            targetSocketId
+          );
+        }
+      });
+    } catch (err) {
+      console.error("⚠️ Socket message error:", err);
+    }
   });
 
-  // 既読ステータス更新のロジック
   socket.on("readStatusUpdated", (updatedMessage) => {
     io.to(updatedMessage.group.toString()).emit(
       "readStatusUpdated",
@@ -104,7 +56,11 @@ const socketHandler = (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    console.log("❌ Client disconnected:", socket.id);
+    if (socket.userId) {
+      // ユーザーIDをキーとしてマップから削除
+      userSockets.delete(socket.userId.toString());
+    }
   });
 };
 
@@ -122,12 +78,23 @@ module.exports = {
     });
 
     io.on("connection", socketHandler);
+    console.log("🔹 Socket.IO server initialized");
     return io;
   },
+
   getIo: () => {
-    if (!io) {
-      throw new Error("Socket.io not initialized!");
-    }
+    if (!io) throw new Error("Socket.io not initialized!");
     return io;
+  },
+
+  // userSocketsマップをエクスポート
+  userSockets: userSockets,
+
+  emitRemovedFromGroup: (userId, groupId) => {
+    console.log("⚠️ emitRemovedFromGroup called:", { userId, groupId });
+    const socketId = userSockets.get(userId.toString());
+    if (socketId) {
+      io.to(socketId).emit("removed_from_group", groupId.toString());
+    }
   },
 };
