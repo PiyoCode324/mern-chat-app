@@ -7,6 +7,24 @@ const mongoose = require("mongoose");
 // ルーターを関数でラップし、ioインスタンスを引数として受け取る
 module.exports = (io) => {
   // -----------------------------
+  // GET /api/groupmembers/check-admin/:userId
+  // 指定ユーザーが管理者かどうかを判定
+  // -----------------------------
+  router.get("/check-admin/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const adminMembership = await GroupMember.findOne({
+        userId,
+        isAdmin: true,
+      });
+      res.json({ isAdmin: !!adminMembership });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "管理者権限の確認に失敗しました" });
+    }
+  });
+
+  // -----------------------------
   // GET /api/groupmembers/:groupId
   // 指定グループのメンバー一覧取得
   // -----------------------------
