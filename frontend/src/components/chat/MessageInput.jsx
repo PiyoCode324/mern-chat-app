@@ -12,6 +12,7 @@ const ALLOWED_TYPES = [
   "application/pdf",
 ];
 
+// isMutedを受け取り、送信や入力を制御
 export default function MessageInput({
   groupId,
   socket,
@@ -25,6 +26,8 @@ export default function MessageInput({
   fileInputRef,
   showModal,
   setMessages,
+  onSendMessage,
+  isMuted,
 }) {
   const [gifQuery, setGifQuery] = useState("");
   const [gifResults, setGifResults] = useState([]);
@@ -33,6 +36,7 @@ export default function MessageInput({
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
 
+    // ファイル形式チェック
     if (!ALLOWED_TYPES.includes(selectedFile.type)) {
       showModal("⚠️ この種類のファイルは送信できません");
       e.target.value = "";
@@ -42,6 +46,7 @@ export default function MessageInput({
       return;
     }
 
+    // ファイルサイズチェック
     if (selectedFile.size > MAX_SIZE) {
       showModal("⚠️ ファイルサイズは5MBまでです");
       return;
@@ -58,6 +63,13 @@ export default function MessageInput({
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
+
+    // ミュート中は送信不可
+    if (isMuted) {
+      showModal("あなたはミュートされているため、メッセージを送信できません。");
+      return;
+    }
+
     if (!newMessage.trim() && !file) return;
 
     if (!navigator.onLine) {
@@ -65,7 +77,7 @@ export default function MessageInput({
       return;
     }
 
-    // 楽観的メッセージを先に表示
+    // 楽観的メッセージ表示
     const tempMessage = {
       _id: "temp-" + Date.now(),
       group: groupId,
@@ -73,9 +85,8 @@ export default function MessageInput({
       text: newMessage,
       file: previewUrl || null,
       createdAt: new Date().toISOString(),
-      pending: true, // UIで「送信中...」扱いできるようにフラグ
+      pending: true,
     };
-    // ここで props から渡ってきている setMessages を呼び出す
     if (typeof setMessages === "function") {
       setMessages((prev) => [...prev, tempMessage]);
     }
@@ -94,7 +105,7 @@ export default function MessageInput({
 
       socket.emit("groupMessage", res.data);
 
-      // 送信成功 → 仮メッセージを本物に置き換える処理
+      // 仮メッセージを本物に置き換え
       if (typeof setMessages === "function") {
         setMessages((prev) =>
           prev.map((msg) => (msg._id === tempMessage._id ? res.data : msg))
@@ -112,7 +123,6 @@ export default function MessageInput({
       console.error("メッセージ送信に失敗:", err);
       showModal("⚠️ メッセージ送信に失敗しました");
 
-      // エラーなら仮メッセージを消す or エラー表示にする
       if (typeof setMessages === "function") {
         setMessages((prev) =>
           prev.filter((msg) => msg._id !== tempMessage._id)
@@ -129,17 +139,26 @@ export default function MessageInput({
           ref={fileInputRef}
           onChange={handleFileChange}
           className="p-2 border border-gray-300 rounded-md w-full sm:w-1/4 mb-2 sm:mb-0"
+          disabled={isMuted}
         />
         <input
           type="text"
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="メッセージを入力..."
+          placeholder={
+            isMuted ? "あなたはミュートされています" : "メッセージを入力..."
+          }
           className="flex-1 p-2 border border-gray-300 rounded-md"
+          disabled={isMuted}
         />
         <button
           type="submit"
-          className="px-4 py-2 bg-blue-500 text-white font-bold rounded-md hover:bg-blue-600 transition-colors mt-2 sm:mt-0"
+          className={`px-4 py-2 text-white font-bold rounded-md transition-colors mt-2 sm:mt-0 ${
+            isMuted
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-blue-500 hover:bg-blue-600"
+          }`}
+          disabled={isMuted}
         >
           送信
         </button>

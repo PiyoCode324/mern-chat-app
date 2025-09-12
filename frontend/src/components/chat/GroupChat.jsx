@@ -13,6 +13,7 @@ const API_URL = import.meta.env.VITE_API_URL;
 
 export default function GroupChat({ groupId }) {
   const { user } = useAuth();
+
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [file, setFile] = useState(null);
@@ -23,6 +24,7 @@ export default function GroupChat({ groupId }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [members, setMembers] = useState([]);
   const [isBanned, setIsBanned] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -55,20 +57,33 @@ export default function GroupChat({ groupId }) {
           setIsBanned(true);
         } else {
           setIsBanned(false);
+          setIsMuted(me?.isMuted || false);
           socket.emit("joinGroup", { groupId, userId: user.uid });
         }
 
-        // 💡 修正: 受け取るデータを `action` に変更し、その値で処理を分岐
+        // BANイベント
         socket.on("member_banned", ({ userId, action }) => {
           if (userId === user.uid) {
-            // `action`の値が"ban"ならtrue、それ以外ならfalse
             const isCurrentlyBanned = action === "ban";
             setIsBanned(isCurrentlyBanned);
-            if (isCurrentlyBanned) {
-              showModal("あなたはグループからBANされました。");
-            } else {
-              showModal("あなたはグループのBANを解除されました。");
-            }
+            showModal(
+              isCurrentlyBanned
+                ? "あなたはグループからBANされました。"
+                : "あなたはグループのBANを解除されました。"
+            );
+          }
+        });
+
+        // ミュートイベント
+        socket.on("member_muted", ({ userId, action }) => {
+          if (userId === user.uid) {
+            const isCurrentlyMuted = action === "mute";
+            setIsMuted(isCurrentlyMuted);
+            showModal(
+              isCurrentlyMuted
+                ? "あなたはミュートされました。メッセージを送信できません。"
+                : "あなたはミュートを解除されました。"
+            );
           }
         });
 
@@ -82,10 +97,11 @@ export default function GroupChat({ groupId }) {
                 ? message.sender
                 : message.sender?._id || "unknown",
           };
-          setMessages((prev) => {
-            if (prev.some((m) => m._id === normalizedMsg._id)) return prev;
-            return [...prev, normalizedMsg];
-          });
+          setMessages((prev) =>
+            prev.some((m) => m._id === normalizedMsg._id)
+              ? prev
+              : [...prev, normalizedMsg]
+          );
         });
 
         // 既読更新
@@ -118,6 +134,7 @@ export default function GroupChat({ groupId }) {
       socket.off("message_received");
       socket.off("readStatusUpdated");
       socket.off("member_banned");
+      socket.off("member_muted");
     };
   }, [user, groupId, socket]);
 
@@ -139,8 +156,6 @@ export default function GroupChat({ groupId }) {
     } catch (err) {
       console.error("メッセージ取得に失敗:", err);
       showModal("メッセージの取得に失敗しました");
-    } finally {
-      // 💡 `setLoading(false);`はuseEffect内の`try...catch...finally`に移動済み
     }
   }, [groupId, user]);
 
@@ -166,9 +181,8 @@ export default function GroupChat({ groupId }) {
     [user]
   );
 
-  // メッセージ既読チェック
   useEffect(() => {
-    if (!user || isBanned) return; // 💡 追加: BANされている場合はチェックをスキップ
+    if (!user || isBanned) return;
     messages.forEach((msg) => {
       if (msg.sender !== user.uid && !msg.readBy?.includes(user.uid)) {
         handleMarkAsRead(msg._id);
@@ -196,6 +210,7 @@ export default function GroupChat({ groupId }) {
       const formData = new FormData();
       formData.append("text", text);
       if (fileData) formData.append("file", fileData);
+
       const { data } = await axios.post(
         `${API_URL}/messages/group/${groupId}`,
         formData,
@@ -222,12 +237,11 @@ export default function GroupChat({ groupId }) {
     }
   };
 
-  // 💡 修正: レンダリングロジック
+  // レンダリング
   if (!user) return <div>ユーザーを認証しています...</div>;
   if (loading)
     return <div className="text-center p-4">メッセージを取得中...</div>;
 
-  // 💡 追加: BAN状態の確認をここで行う
   if (isBanned) {
     return (
       <div className="flex flex-col h-screen p-2 sm:p-4 bg-gray-100 rounded-lg shadow-md">
@@ -248,7 +262,6 @@ export default function GroupChat({ groupId }) {
     );
   }
 
-  // BANされていない場合、通常のチャット画面をレンダリング
   return (
     <div className="flex flex-col h-screen p-2 sm:p-4 bg-gray-100 rounded-lg shadow-md">
       <h2 className="text-2xl font-bold mb-2 sm:mb-4 text-center">
@@ -278,6 +291,7 @@ export default function GroupChat({ groupId }) {
         showModal={showModal}
         setMessages={setMessages}
         onSendMessage={handleSendMessage}
+        isMuted={isMuted}
       />
     </div>
   );
