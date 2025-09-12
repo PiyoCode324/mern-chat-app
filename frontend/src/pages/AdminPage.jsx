@@ -5,8 +5,10 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
+import { io } from "socket.io-client";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 
 export default function AdminPage() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -14,12 +16,13 @@ export default function AdminPage() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [socket, setSocket] = useState(null);
+
   const navigate = useNavigate();
 
-  // ログイン状態と管理者権限の確認を一つのuseEffectに統合
+  // 🔹 Firebase認証 & 管理者確認
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      // onAuthStateChangedのコールバックは同期的に保つ
       const handleAuth = async () => {
         if (!user) {
           navigate("/profile");
@@ -52,7 +55,43 @@ export default function AdminPage() {
     return () => unsubscribe();
   }, [navigate]);
 
-  // メンバー情報取得
+  // 🔹 Socket.IO 初期化
+  useEffect(() => {
+    if (!currentUser) return;
+    const newSocket = io(SOCKET_URL, { query: { userId: currentUser.id } });
+    setSocket(newSocket);
+    return () => newSocket.disconnect();
+  }, [currentUser]);
+
+  // 🔹 Socket.IO イベント監視
+  useEffect(() => {
+    if (!socket || !selectedGroup) return;
+
+    // BAN/UNBAN 即時更新
+    socket.on("member_banned", ({ userId: bannedUserId, groupId, action }) => {
+      if (selectedGroup._id !== groupId) return;
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.userId._id === bannedUserId
+            ? { ...m, isBanned: action === "ban" }
+            : m
+        )
+      );
+    });
+
+    // 削除された場合の即時反映
+    socket.on("removed_from_group", ({ userId, groupId }) => {
+      if (selectedGroup._id !== groupId) return;
+      setMembers((prev) => prev.filter((m) => m.userId._id !== userId));
+    });
+
+    return () => {
+      socket.off("member_banned");
+      socket.off("removed_from_group");
+    };
+  }, [socket, selectedGroup]);
+
+  // 🔹 メンバー取得
   const fetchMembers = async (groupId) => {
     try {
       const res = await axios.get(`${API_URL}/groupmembers/${groupId}`);
@@ -67,35 +106,47 @@ export default function AdminPage() {
     fetchMembers(group._id);
   };
 
+  // 🔹 メンバー操作
   const handleMemberAction = async (targetUserId, action) => {
     try {
       if (action === "mute" || action === "unmute") {
         await axios.patch(
           `${API_URL}/groupmembers/${selectedGroup._id}/mute-member`,
-          {
-            adminUserId: currentUser.id,
-            targetUserId,
-            action,
-          }
+          { adminUserId: currentUser.id, targetUserId, action }
+        );
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.userId._id === targetUserId
+              ? { ...m, isMuted: action === "mute" }
+              : m
+          )
+        );
+      } else if (action === "ban" || action === "unban") {
+        const { data } = await axios.patch(
+          `${API_URL}/groupmembers/${selectedGroup._id}/ban-member`,
+          { adminUserId: currentUser.id, targetUserId, action }
+        );
+        // 即時反映: members 状態を更新
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.userId._id === targetUserId
+              ? { ...m, isBanned: data.member.isBanned }
+              : m
+          )
         );
       } else if (action === "remove") {
-        // 💡 DELETE リクエストを使用してメンバーを削除
-        await axios.delete(
-          `${API_URL}/groupmembers/${targetUserId}` // メンバーの _id を使用
-        );
+        await axios.delete(`${API_URL}/groupmembers/${targetUserId}`);
+        setMembers((prev) => prev.filter((m) => m.userId._id !== targetUserId));
       } else {
-        // 💡 今後BAN機能などを追加する場合の拡張性
         console.error("無効なメンバーアクションです。");
         return;
       }
-
-      // 成功したらメンバーリストを再取得してUIを更新
-      fetchMembers(selectedGroup._id);
     } catch (err) {
       console.error("メンバーアクションに失敗:", err);
     }
   };
 
+  // 🔹 グループ削除
   const handleDeleteGroup = async (groupId) => {
     try {
       await axios.delete(`${API_URL}/groups/${groupId}`, {
@@ -109,7 +160,6 @@ export default function AdminPage() {
     }
   };
 
-  // ローディング中の表示
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -118,10 +168,7 @@ export default function AdminPage() {
     );
   }
 
-  // 権限がない場合にcurrentUserがnullのままになるため、追加のチェック
-  if (!currentUser) {
-    return null;
-  }
+  if (!currentUser) return null;
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4">
@@ -167,7 +214,6 @@ export default function AdminPage() {
                 <div className="flex gap-2">
                   <button
                     className="px-2 py-1 bg-red-500 text-white rounded"
-                    // 💡 修正: ここで m._id ではなく m.userId._id を使用
                     onClick={() => handleMemberAction(m._id, "remove")}
                   >
                     削除

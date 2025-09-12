@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const GroupMember = require("../models/GroupMember");
+const Group = require("../models/Group");
 const mongoose = require("mongoose");
 
 // ルーターを関数でラップし、ioインスタンスを引数として受け取る
@@ -133,6 +134,79 @@ module.exports = (io) => {
     } catch (err) {
       console.error(err);
       res.status(500).json({ message: "メンバー更新に失敗しました" });
+    }
+  });
+
+  // -----------------------------
+  // PATCH /api/groupmembers/:groupId/ban-member
+  // メンバーBAN / BAN解除（即時通知対応）
+  // -----------------------------
+  router.patch("/:groupId/ban-member", async (req, res) => {
+    const { groupId } = req.params;
+    const { adminUserId, targetUserId, action } = req.body;
+
+    try {
+      if (!mongoose.Types.ObjectId.isValid(groupId)) {
+        return res.status(400).json({ message: "無効なグループIDです" });
+      }
+
+      const group = await Group.findById(groupId);
+      if (!group) {
+        return res.status(404).json({ message: "グループが見つかりません" });
+      }
+
+      // 管理者チェック
+      const adminMember = await GroupMember.findOne({
+        groupId: groupId,
+        userId: adminUserId,
+        isAdmin: true,
+      });
+
+      if (!adminMember) {
+        return res.status(403).json({ message: "権限がありません" });
+      }
+
+      const member = await GroupMember.findOne({
+        groupId,
+        userId: targetUserId,
+      });
+      if (!member) {
+        return res.status(404).json({ message: "メンバーが見つかりません" });
+      }
+
+      if (action === "ban") {
+        member.isBanned = true;
+      } else if (action === "unban") {
+        member.isBanned = false;
+      } else {
+        return res.status(400).json({ message: "無効なアクションです" });
+      }
+
+      await member.save();
+      console.log("✅ Member BAN status updated:", member);
+
+      // -----------------------------
+      // 🔔 即時通知
+      // -----------------------------
+      if (io) {
+        io.to(groupId).emit("member_banned", {
+          userId: targetUserId,
+          action,
+        });
+        console.log("🔔 member_banned event emitted:", {
+          groupId,
+          userId: targetUserId,
+          action,
+        });
+      }
+
+      res.json({
+        message: `メンバーを${action === "ban" ? "BAN" : "BAN解除"}しました`,
+        member,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "サーバーエラー" });
     }
   });
 

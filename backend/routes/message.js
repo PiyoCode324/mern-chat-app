@@ -224,10 +224,7 @@ router.post("/gif", async (req, res) => {
   }
 });
 
-/**
- * GET /api/messages/group/:groupId
- */
-// 修正対象: このエンドポイントにメンバーシップチェックを追加
+// GET /api/messages/group/:groupId
 router.get("/group/:groupId", async (req, res) => {
   try {
     const { groupId } = req.params;
@@ -241,20 +238,31 @@ router.get("/group/:groupId", async (req, res) => {
 
     if (!mongoose.Types.ObjectId.isValid(groupId)) {
       return res.status(400).json({ message: "無効なグループIDです" });
-    } // 💡 メンバーシップチェックを追加
+    }
 
-    const isMember = await GroupMember.findOne({
+    // 💡 メンバーシップチェック
+    const membership = await GroupMember.findOne({
       groupId: groupId,
       userId: currentUserId,
     });
 
-    if (!isMember) {
+    if (!membership) {
       console.log(
         `❌ User ${currentUserId} is not a member of group ${groupId}. Access denied.`
       );
       return res
         .status(403)
         .json({ message: "グループへのアクセス権がありません。" });
+    }
+
+    // 💡 BAN チェックを追加
+    if (membership.isBanned) {
+      console.log(`⛔ User ${currentUserId} is banned from group ${groupId}.`);
+      return res
+        .status(403)
+        .json({
+          message: "あなたはBANされているためメッセージを閲覧できません",
+        });
     }
 
     const mutedMembers = await GroupMember.find({
