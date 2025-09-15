@@ -1,4 +1,3 @@
-// frontend/src/components/GroupChat.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { io } from "socket.io-client";
@@ -26,7 +25,13 @@ export default function GroupChat({ groupId }) {
   const [isBanned, setIsBanned] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
+  // ページネーション用
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const showModal = (msg) => {
@@ -97,11 +102,7 @@ export default function GroupChat({ groupId }) {
                 ? message.sender
                 : message.sender?._id || "unknown",
           };
-          setMessages((prev) =>
-            prev.some((m) => m._id === normalizedMsg._id)
-              ? prev
-              : [...prev, normalizedMsg]
-          );
+          setMessages((prev) => [...prev, normalizedMsg]);
         });
 
         // 既読更新
@@ -138,12 +139,13 @@ export default function GroupChat({ groupId }) {
     };
   }, [user, groupId, socket]);
 
-  // メッセージ取得
+  // 初期メッセージ取得
   const fetchMessages = useCallback(async () => {
     if (!user) return;
     try {
+      setLoading(true);
       const { data } = await axios.get(`${API_URL}/messages/group/${groupId}`, {
-        params: { userId: user.uid },
+        params: { userId: user.uid, page: 1, limit: 20 },
       });
       const normalized = data.map((msg) => ({
         ...msg,
@@ -152,12 +154,45 @@ export default function GroupChat({ groupId }) {
             ? msg.sender
             : msg.sender?._id || "unknown",
       }));
-      setMessages(normalized);
+      setMessages(normalized); // ← reverseは不要
+      setHasMore(normalized.length === 20);
+      setPage(2);
     } catch (err) {
       console.error("メッセージ取得に失敗:", err);
       showModal("メッセージの取得に失敗しました");
+    } finally {
+      setLoading(false);
     }
   }, [groupId, user]);
+
+  // 古いメッセージを読み込む
+  const loadMoreMessages = useCallback(async () => {
+    if (!user || !hasMore || loadingMore) return;
+    try {
+      setLoadingMore(true);
+      const { data } = await axios.get(`${API_URL}/messages/group/${groupId}`, {
+        params: { userId: user.uid, page, limit: 20 },
+      });
+      const normalized = data.map((msg) => ({
+        ...msg,
+        sender:
+          typeof msg.sender === "string"
+            ? msg.sender
+            : msg.sender?._id || "unknown",
+      }));
+      if (normalized.length > 0) {
+        setMessages((prev) => [...normalized, ...prev]); // ← reverseは不要
+        setPage((prev) => prev + 1);
+        setHasMore(normalized.length === 20);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error("古いメッセージの読み込みに失敗:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [user, groupId, page, hasMore, loadingMore]);
 
   // 既読処理
   const handleMarkAsRead = useCallback(
@@ -189,6 +224,20 @@ export default function GroupChat({ groupId }) {
       }
     });
   }, [messages, user, handleMarkAsRead, isBanned]);
+
+  // 新規メッセージが来たときにスクロール制御
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const isAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      50;
+
+    if (isAtBottom && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
 
   // メッセージ送信
   const handleSendMessage = async (text, fileData) => {
@@ -237,7 +286,6 @@ export default function GroupChat({ groupId }) {
     }
   };
 
-  // レンダリング
   if (!user) return <div>ユーザーを認証しています...</div>;
   if (loading)
     return <div className="text-center p-4">メッセージを取得中...</div>;
@@ -275,7 +323,11 @@ export default function GroupChat({ groupId }) {
       <MessageList
         messages={messages}
         currentUserId={user.uid}
+        onLoadMore={loadMoreMessages}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
         messagesEndRef={messagesEndRef}
+        scrollContainerRef={scrollContainerRef}
       />
       <MessageInput
         groupId={groupId}

@@ -1,4 +1,3 @@
-// frontend/src/components/MessageList.jsx
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
@@ -8,18 +7,16 @@ export default function MessageList({
   messages,
   currentUserId,
   messagesEndRef,
+  scrollContainerRef,
 }) {
-  const [userProfiles, setUserProfiles] = useState({}); // { uid: { name, iconUrl } }
+  const [userProfiles, setUserProfiles] = useState({});
 
   useEffect(() => {
     const uniqueUserIds = [...new Set(messages.map((m) => m.sender))];
-    console.log("🔍 Unique user IDs in messages:", uniqueUserIds);
-
     uniqueUserIds.forEach(async (uid) => {
       if (!userProfiles[uid]) {
         try {
           const res = await axios.get(`${API_URL}/users/${uid}`);
-          console.log("✅ Fetched user profile:", uid, res.data);
           setUserProfiles((prev) => ({ ...prev, [uid]: res.data }));
         } catch (err) {
           console.error("⚠️ ユーザー情報取得失敗:", uid, err);
@@ -30,7 +27,8 @@ export default function MessageList({
 
   return (
     <div
-      className="flex-1 overflow-y-auto mb-2 p-2 bg-white rounded-md"
+      ref={scrollContainerRef}
+      className="flex-1 overflow-y-auto mb-2 p-2 bg-white rounded-md flex flex-col"
       style={{ maxHeight: "calc(100vh - 240px)" }}
     >
       {messages.length > 0 ? (
@@ -40,7 +38,7 @@ export default function MessageList({
 
           return (
             <div
-              key={msg._id}
+              key={msg._id || msg._tempId}
               className={`flex mb-2 ${
                 isCurrentUser ? "justify-end" : "justify-start"
               }`}

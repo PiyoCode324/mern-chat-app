@@ -9,20 +9,22 @@ export default function ChatPage() {
 
   // 認証状態が確認できるまでローディング画面を表示
   if (!isAuthReady) {
-    return <div>ログイン情報を取得中...</div>;
+    return (
+      <div className="flex justify-center items-center h-screen">
+        ログイン情報を取得中...
+      </div>
+    );
   }
 
-  // URLから取得したidをGroupChatに渡す
   return (
-    <div className="flex justify-center items-center h-screen">
-      <div className="w-full max-w-xl h-4/5 bg-white shadow-xl rounded-lg p-6">
-        {/* idが取得できた場合のみGroupChatを表示 */}
-        {id ? (
-          <GroupChat groupId={id} />
-        ) : (
-          <div>グループIDが見つかりません。</div>
-        )}
-      </div>
+    <div className="flex flex-col h-full w-full">
+      {id ? (
+        <GroupChat groupId={id} />
+      ) : (
+        <div className="flex justify-center items-center h-full text-gray-600">
+          グループIDが見つかりません。
+        </div>
+      )}
     </div>
   );
 }

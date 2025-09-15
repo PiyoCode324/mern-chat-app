@@ -26,7 +26,6 @@ export default function MessageInput({
   fileInputRef,
   showModal,
   setMessages,
-  onSendMessage,
   isMuted,
 }) {
   const [gifQuery, setGifQuery] = useState("");
