@@ -1,3 +1,4 @@
+// frontend/src/components/GroupChat.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { io } from "socket.io-client";
@@ -21,7 +22,7 @@ export default function GroupChat({ groupId }) {
   const [loading, setLoading] = useState(true);
   const [modalMessage, setModalMessage] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [members, setMembers] = useState([]);
+  const [setMembers] = useState([]);
   const [isBanned, setIsBanned] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 

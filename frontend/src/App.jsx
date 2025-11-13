@@ -6,7 +6,7 @@ import {
   Navigate,
 } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import { getAuth, onAuthStateChanged} from "firebase/auth";
 
 import Layout from "./components/layout/Layout";
 import AuthPage from "./pages/AuthPage";

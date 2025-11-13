@@ -12,7 +12,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 export default function GroupsPage() {
   const [groups, setGroups] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [socket, setSocket] = useState(null);
+  const [setSocket] = useState(null);
 
   // Firebase認証リスナー
   useEffect(() => {
